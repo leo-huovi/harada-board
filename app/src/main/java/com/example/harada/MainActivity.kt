@@ -131,7 +131,15 @@ class MainActivity : AppCompatActivity() {
             }
             gravity = Gravity.CENTER
             textSize = 20f
-            text = boardManager.calculateTotalSum().toString()
+
+            // Different text format for day vs night mode
+            if (boardManager.isAlternateBoard) {
+                // In night mode, show days used label
+                text = "Days: ${boardManager.calculateTotalSum()}"
+            } else {
+                // In day mode, just show the sum
+                text = boardManager.calculateTotalSum().toString()
+            }
 
             // Set text color based on day/night mode
             if (boardManager.isAlternateBoard) {
@@ -163,10 +171,12 @@ class MainActivity : AppCompatActivity() {
                     handler.postDelayed(flipRunnable, 1000)
                     true
                 }
+
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     handler.removeCallbacks(flipRunnable)
                     true
                 }
+
                 else -> false
             }
         }
@@ -191,6 +201,8 @@ class MainActivity : AppCompatActivity() {
 
             // Calculate initial sum for this block
             val blockSum = boardManager.calculateBlockSum(blockRow, blockCol)
+
+            // Display differently based on mode
             text = blockSum.toString()
 
             // Set text color based on the block's hue, but with maximum saturation
@@ -220,10 +232,12 @@ class MainActivity : AppCompatActivity() {
                         handler.postDelayed(flipRunnable, 1000)
                         true
                     }
+
                     MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                         handler.removeCallbacks(flipRunnable)
                         true
                     }
+
                     else -> false
                 }
             }
@@ -260,115 +274,172 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun createButtonCell(row: Int, col: Int, cellSize: Int) {
-        val savedValue = boardManager.getCellValue(row, col)
-        val button = Button(this).apply {
-            layoutParams = GridLayout.LayoutParams().apply {
-                width = cellSize + 4 // Add 1 pixel overlap
-                height = cellSize + 4 // Add 1 pixel overlap
-                // Remove any spacing or margins
-                setMargins(-2, -2, 0, 0) // Negative margin creates overlap
-            }
-            gravity = Gravity.CENTER
-            // Remove default padding for flat appearance
-            setPadding(0, 0, 0, 0)
-            textSize = 16f
-            text = savedValue.toString()
+        // Get display value depending on current board mode (day/night)
+        val displayValue = boardManager.getCellDisplayValue(row, col)
 
-            // Enhanced text color logic based on increment status
-            when (boardManager.getLastIncrementedPeriod(row, col)) {
-                BoardManager.IncrementStatus.CURRENT_PERIOD -> {
-                    setTextColor(boardManager.pressedTextColor) // Green
+        // For night mode, use TextView instead of Button to emphasize read-only nature
+        if (boardManager.isAlternateBoard) {
+            val textView = TextView(this).apply {
+                layoutParams = GridLayout.LayoutParams().apply {
+                    width = cellSize + 4
+                    height = cellSize + 4
+                    setMargins(-2, -2, 0, 0)
                 }
-                BoardManager.IncrementStatus.PREVIOUS_PERIOD -> {
-                    // Default color (Black/White)
-                    if (boardManager.isAlternateBoard) {
-                        setTextColor(Color.WHITE)
-                    } else {
-                        setTextColor(Color.BLACK)
+                gravity = Gravity.CENTER
+                setPadding(0, 0, 0, 0)
+                textSize = 16f
+
+                // In night mode, show number of days used out of 10
+                text = displayValue.toString()
+
+                // Create text color based on usage intensity (0-10)
+                // Higher values are more saturated/brighter
+                val intensity = displayValue / 10f
+
+                // For night mode, use a bluish color that gets more intense with higher values
+                val r = (255 * (1 - intensity * 0.7f)).toInt()
+                val g = (255 * (1 - intensity * 0.5f)).toInt()
+                val b = 255 // Keep blue at maximum
+                setTextColor(Color.rgb(r, g, b))
+
+                // Background color based on intensity
+                background = ColorUtils.makeUsageBackground(displayValue, row, col, boardManager)
+
+                // Add a flip handler to allow switching back to day mode
+                var flipped = false
+                val handler = Handler(Looper.getMainLooper())
+                val flipRunnable = Runnable {
+                    if (!flipped) {
+                        flipBoard()
+                        flipped = true
                     }
                 }
-                BoardManager.IncrementStatus.LONG_AGO,
-                BoardManager.IncrementStatus.NEVER -> { // Combining these cases
-                    setTextColor(boardManager.notIncrementedTextColor) // Red
-                }
-            }
 
-            // Use flat style on both day and night mode
-            background = ColorUtils.makeColoredBackground(savedValue, row, col, boardManager)
-
-            // Remove any default button styling
-            isAllCaps = false
-            stateListAnimator = null
-        }
-
-        var didReset = false
-        val handler = Handler(Looper.getMainLooper())
-        val resetRunnable = Runnable {
-            button.text = "0"
-            boardManager.saveCell(row, col, 0)
-            button.background = ColorUtils.makeColoredBackground(0, row, col, boardManager)
-            AnimationUtils.playSparkleAnimation(button)
-            button.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
-            didReset = true
-
-            // Reset to default text color on reset
-            if (boardManager.isAlternateBoard) {
-                button.setTextColor(Color.WHITE)
-            } else {
-                button.setTextColor(Color.BLACK)
-            }
-
-            // Get block coordinates for this cell
-            val blockRow = row / 3
-            val blockCol = col / 3
-
-            // Update only the summary for this specific block
-            updateBlockSum(blockRow, blockCol)
-
-            // Also update the total sum
-            updateTotalSum()
-        }
-
-        button.setOnTouchListener { _, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    didReset = false
-                    handler.postDelayed(resetRunnable, 1000)
-                    true
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    handler.removeCallbacks(resetRunnable)
-                    if (!didReset && event.action == MotionEvent.ACTION_UP) {
-                        button.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
-                        val current = button.text.toString().toInt()
-                        val updated = (current + 1).coerceAtMost(maxCount)
-                        button.text = updated.toString()
-                        boardManager.saveCell(row, col, updated)
-                        button.background = ColorUtils.makeColoredBackground(updated, row, col, boardManager)
-
-                        // Update text color to green to indicate pressed today/this week
-                        if (updated > 0) {
-                            button.setTextColor(boardManager.pressedTextColor)
+                setOnTouchListener { _, event ->
+                    when (event.action) {
+                        MotionEvent.ACTION_DOWN -> {
+                            flipped = false
+                            handler.postDelayed(flipRunnable, 1000)
+                            true
                         }
 
-                        // Get block coordinates for this cell
-                        val blockRow = row / 3
-                        val blockCol = col / 3
+                        MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            handler.removeCallbacks(flipRunnable)
+                            true
+                        }
 
-                        // Update only the summary for this specific block
-                        updateBlockSum(blockRow, blockCol)
-
-                        // Also update the total sum
-                        updateTotalSum()
+                        else -> false
                     }
-                    true
                 }
-                else -> false
             }
-        }
 
-        buttonGrid[row][col] = button
-        gridLayout.addView(button)
+            buttonGrid[row][col] = null // No button in night mode
+            gridLayout.addView(textView)
+        } else {
+            // Day mode - create normal incrementable button
+            val button = Button(this).apply {
+                layoutParams = GridLayout.LayoutParams().apply {
+                    width = cellSize + 4
+                    height = cellSize + 4
+                    setMargins(-2, -2, 0, 0)
+                }
+                gravity = Gravity.CENTER
+                setPadding(0, 0, 0, 0)
+                textSize = 16f
+                text = displayValue.toString()
+
+                // Day mode text color based on increment status
+                when (boardManager.getLastIncrementedPeriod(row, col)) {
+                    BoardManager.IncrementStatus.CURRENT_PERIOD -> {
+                        setTextColor(boardManager.pressedTextColor) // Green
+                    }
+
+                    BoardManager.IncrementStatus.PREVIOUS_PERIOD -> {
+                        setTextColor(Color.BLACK) // Default day mode color
+                    }
+
+                    BoardManager.IncrementStatus.LONG_AGO,
+                    BoardManager.IncrementStatus.NEVER -> {
+                        setTextColor(boardManager.notIncrementedTextColor) // Red
+                    }
+                }
+
+                // Button background
+                background = ColorUtils.makeColoredBackground(displayValue, row, col, boardManager)
+
+                // Remove any default button styling
+                isAllCaps = false
+                stateListAnimator = null
+            }
+
+            var didReset = false
+            val handler = Handler(Looper.getMainLooper())
+            val resetRunnable = Runnable {
+                button.text = "0"
+                boardManager.saveCell(row, col, 0)
+                button.background = ColorUtils.makeColoredBackground(0, row, col, boardManager)
+                AnimationUtils.playSparkleAnimation(button)
+                button.performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+                didReset = true
+
+                // Reset to default text color on reset
+                button.setTextColor(Color.BLACK)
+
+                // Get block coordinates for this cell
+                val blockRow = row / 3
+                val blockCol = col / 3
+
+                // Update only the summary for this specific block
+                updateBlockSum(blockRow, blockCol)
+
+                // Also update the total sum
+                updateTotalSum()
+            }
+
+            button.setOnTouchListener { _, event ->
+                when (event.action) {
+                    MotionEvent.ACTION_DOWN -> {
+                        didReset = false
+                        handler.postDelayed(resetRunnable, 1000)
+                        true
+                    }
+
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                        handler.removeCallbacks(resetRunnable)
+                        if (!didReset && event.action == MotionEvent.ACTION_UP) {
+                            button.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY)
+                            val current = button.text.toString().toInt()
+                            val updated = (current + 1).coerceAtMost(maxCount)
+                            button.text = updated.toString()
+                            boardManager.saveCell(row, col, updated)
+                            button.background =
+                                ColorUtils.makeColoredBackground(updated, row, col, boardManager)
+
+                            // Update text color to green to indicate pressed today
+                            if (updated > 0) {
+                                button.setTextColor(boardManager.pressedTextColor)
+                            }
+
+                            // Get block coordinates for this cell
+                            val blockRow = row / 3
+                            val blockCol = col / 3
+
+                            // Update only the summary for this specific block
+                            updateBlockSum(blockRow, blockCol)
+
+                            // Also update the total sum
+                            updateTotalSum()
+                        }
+                        true
+                    }
+
+                    else -> false
+                }
+            }
+
+            buttonGrid[row][col] = button
+            gridLayout.addView(button)
+        }
     }
 
     // Function to update only a specific block sum
@@ -391,8 +462,13 @@ class MainActivity : AppCompatActivity() {
         // Calculate the new total sum
         val newTotalSum = boardManager.calculateTotalSum()
 
-        // Update the center cell
-        centerSumView.text = newTotalSum.toString()
+        // Update the center cell with appropriate formatting
+        if (boardManager.isAlternateBoard) {
+            centerSumView.text = "Days: ${newTotalSum}"
+        } else {
+            centerSumView.text = newTotalSum.toString()
+        }
+
         AnimationUtils.playSparkleAnimation(centerSumView)
     }
 

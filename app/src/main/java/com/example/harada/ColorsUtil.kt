@@ -5,7 +5,7 @@ import android.graphics.drawable.GradientDrawable
 
 object ColorUtils {
 
-    // Create colored background for buttons based on value and position
+    // Create colored background for buttons based on value and position (day mode)
     fun makeColoredBackground(value: Int, row: Int, col: Int, boardManager: BoardManager): GradientDrawable {
         val blockRow = row / 3
         val blockCol = col / 3
@@ -13,19 +13,9 @@ object ColorUtils {
 
         val step = (value / 5).coerceAtMost(12)
 
-        // Adjust saturation and brightness based on night mode
-        val saturation: Float
-        val brightness: Float
-
-        if (boardManager.isAlternateBoard) {
-            // Night mode - darker background, higher saturation
-            saturation = (0.05f + step * 0.03f).coerceAtMost(0.4f)
-            brightness = (0.5f - step * 0.01f).coerceIn(0.4f, 0.5f)
-        } else {
-            // Day mode - lighter background, lower saturation
-            saturation = (0.02f + step * 0.025f).coerceAtMost(0.3f)
-            brightness = (1.0f - step * 0.003f).coerceIn(0.94f, 1.0f)
-        }
+        // Day mode - lighter background, lower saturation
+        val saturation = (0.02f + step * 0.025f).coerceAtMost(0.3f)
+        val brightness = (1.0f - step * 0.003f).coerceIn(0.94f, 1.0f)
 
         val hsv = floatArrayOf(hue, saturation, brightness)
         val color = Color.HSVToColor(hsv)
@@ -33,12 +23,33 @@ object ColorUtils {
         return GradientDrawable().apply {
             cornerRadius = 0f
             setColor(color)
-
-            // Add a padding that matches the button color instead of transparent
-            // This ensures any tiny gaps will be filled with the button's color
-            setPadding(1, 1, 1, 1)
-
             // No border/stroke on buttons - completely flat design
+            setStroke(0, Color.TRANSPARENT)
+        }
+    }
+
+    // Create colored background for usage count cells (night mode)
+    // Usage is an integer from 0-10 representing days used
+    fun makeUsageBackground(daysUsed: Int, row: Int, col: Int, boardManager: BoardManager): GradientDrawable {
+        val blockRow = row / 3
+        val blockCol = col / 3
+        val hue = boardManager.getCurrentHues()[Pair(blockRow, blockCol)] ?: 0f
+
+        // Normalize days used (0-10) to determine intensity
+        val intensity = daysUsed / 10f
+
+        // For night mode usage count, we want deeper colors with higher saturation
+        // as the days used increases
+        val saturation = (0.2f + intensity * 0.6f).coerceIn(0.2f, 0.8f)
+        val brightness = (0.5f - intensity * 0.2f).coerceIn(0.3f, 0.5f)
+
+        val hsv = floatArrayOf(hue, saturation, brightness)
+        val color = Color.HSVToColor(hsv)
+
+        return GradientDrawable().apply {
+            cornerRadius = 0f
+            setColor(color)
+            // No border - flat design
             setStroke(0, Color.TRANSPARENT)
         }
     }
